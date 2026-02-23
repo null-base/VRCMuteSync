@@ -7,6 +7,9 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<UseWPF>true</UseWPF>
 		<ApplicationIcon>mute.ico</ApplicationIcon>
+		<PackageId>com.null-base.$(AssemblyName)</PackageId>
+		<Authors>null_base</Authors>
+		<Company>null_base</Company>
 	</PropertyGroup>
 
 	<ItemGroup>
