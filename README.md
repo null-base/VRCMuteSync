@@ -33,8 +33,7 @@ VRゴーグルを被ったまま、デスクトップ画面に戻ることなく
    ```
 2. Visual Studioで VRCMuteSync.sln を開きます。
 3. NuGetパッケージを復元します。
-
-ソリューションをビルド（F5 または Ctrl+Shift+B）して実行します。
+4. ソリューションをビルド（F5 または Ctrl+Shift+B）して実行します。
 
 ### 使用ライブラリ
 [WPF-UI](https://github.com/lepoco/wpfui) - モダンなUIコンポーネント
