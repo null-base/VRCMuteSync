@@ -1,16 +1,17 @@
 ﻿using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Input;
+using Microsoft.Win32;
 using WindowsInput.Native;
 using Wpf.Ui.Controls;
 
 namespace VRCMuteSync
 {
-    public partial class SettingsWindow : FluentWindow
+    public partial class SettingsWindow
     {
-        private App _app;
-        private List<int> _tempModifiers = new List<int>();
-        private int _tempMainKey = 0;
+        private readonly App _app;
+        private List<int> _tempKeys = [];
+        private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
 
         public SettingsWindow()
         {
@@ -19,68 +20,55 @@ namespace VRCMuteSync
 
             PortTextBox.Text = _app.AppSettings.OscPort.ToString();
 
-            // 現在の設定を一時変数にコピー
-            _tempModifiers = new List<int>(_app.AppSettings.ModifierKeys);
-            _tempMainKey = _app.AppSettings.MainKey;
+            _tempKeys = [.. _app.AppSettings.Hotkeys];
+            UpdateHotkeyDisplay();
 
             UpdateHotkeyDisplay();
+
+            using RegistryKey? key = Registry.CurrentUser.OpenSubKey(RunKey, false);
+            StartupCheckBox.IsChecked = key?.GetValue("VRCMuteSync") != null;
         }
 
         private void HotkeyTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
         {
-            e.Handled = true; // デフォルトの入力をキャンセル
-
-            // Altキーなどのシステムキーも取得できるようにする
+            e.Handled = true;
             Key key = (e.Key == Key.System ? e.SystemKey : e.Key);
 
-            // Escキーで設定をリセット
             if (key == Key.Escape)
             {
-                _tempModifiers.Clear();
-                _tempMainKey = 0;
+                _tempKeys.Clear();
                 UpdateHotkeyDisplay();
                 return;
             }
 
-            // Ctrl, Shift, Altなどの修飾キー単体で押された時はメインキーを待つためスキップ
-            if (key == Key.LeftShift || key == Key.RightShift ||
-                key == Key.LeftCtrl || key == Key.RightCtrl ||
-                key == Key.LeftAlt || key == Key.RightAlt ||
-                key == Key.LWin || key == Key.RWin)
+            if (key == Key.ImeProcessed || key == Key.DeadCharProcessed || key == Key.None)
             {
                 return;
             }
 
-            // 修飾キーの状態を取得して保存
-            _tempModifiers.Clear();
-            if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
-                _tempModifiers.Add((int)VirtualKeyCode.CONTROL);
-            if ((Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift)
-                _tempModifiers.Add((int)VirtualKeyCode.SHIFT);
-            if ((Keyboard.Modifiers & ModifierKeys.Alt) == ModifierKeys.Alt)
-                _tempModifiers.Add((int)VirtualKeyCode.MENU);
+            _tempKeys.RemoveAll(vk => !Keyboard.IsKeyDown(KeyInterop.KeyFromVirtualKey(vk)));
 
-            // メインのキーをInputSimulator用の仮想キーコードに変換して保存
-            _tempMainKey = KeyInterop.VirtualKeyFromKey(key);
+            int newVk = KeyInterop.VirtualKeyFromKey(key);
+            if (!_tempKeys.Contains(newVk))
+            {
+                _tempKeys.Add(newVk);
+            }
 
             UpdateHotkeyDisplay();
         }
-
         private void UpdateHotkeyDisplay()
         {
-            if (_tempMainKey == 0)
+            if (_tempKeys.Count == 0)
             {
-                HotkeyTextBox.Text = "未設定";
+                HotkeyTextBox.Text = VRCMuteSync.Properties.Resources.Msg_NotSet;
                 return;
             }
 
-            List<string> displayKeys = new List<string>();
-            if (_tempModifiers.Contains((int)VirtualKeyCode.CONTROL)) displayKeys.Add("Ctrl");
-            if (_tempModifiers.Contains((int)VirtualKeyCode.SHIFT)) displayKeys.Add("Shift");
-            if (_tempModifiers.Contains((int)VirtualKeyCode.MENU)) displayKeys.Add("Alt");
-
-            // メインキーの名前を追加
-            displayKeys.Add(((Key)KeyInterop.KeyFromVirtualKey(_tempMainKey)).ToString());
+            List<string> displayKeys = [];
+            foreach (var vk in _tempKeys)
+            {
+                displayKeys.Add(KeyInterop.KeyFromVirtualKey(vk).ToString());
+            }
 
             HotkeyTextBox.Text = string.Join(" + ", displayKeys);
         }
@@ -90,16 +78,29 @@ namespace VRCMuteSync
             if (int.TryParse(PortTextBox.Text, out int port))
             {
                 _app.AppSettings.OscPort = port;
-                _app.AppSettings.ModifierKeys = _tempModifiers;
-                _app.AppSettings.MainKey = _tempMainKey;
+                _app.AppSettings.Hotkeys = _tempKeys;
                 _app.AppSettings.Save();
+
+                using RegistryKey? key = Registry.CurrentUser.OpenSubKey(RunKey, true);
+                if (key != null)
+                {
+                    if (StartupCheckBox.IsChecked == true)
+                    {
+                        string exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule!.FileName;
+                        key.SetValue("VRCMuteSync", $"\"{exePath}\"");
+                    }
+                    else
+                    {
+                        key.DeleteValue("VRCMuteSync", false);
+                    }
+                }
 
                 _app.StartOscServer();
                 Close();
             }
             else
             {
-                System.Windows.MessageBox.Show("ポート番号は正しく入力してください。");
+                System.Windows.MessageBox.Show(VRCMuteSync.Properties.Resources.Msg_PortError);
             }
         }
     }

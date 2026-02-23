@@ -1,10 +1,11 @@
-﻿using System;
+﻿using Hardcodet.Wpf.TaskbarNotification;
+using Rug.Osc;
+using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using Hardcodet.Wpf.TaskbarNotification;
-using Rug.Osc;
 using WindowsInput;
 using WindowsInput.Native;
 
@@ -16,11 +17,14 @@ namespace VRCMuteSync
         private OscReceiver? _oscReceiver;
         private CancellationTokenSource? _cts;
         private InputSimulator? _inputSimulator;
+        private bool? _lastMuteState = null;
         public Settings AppSettings { get; private set; } = null!;
 
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+
+            Application.Current.ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
             AppSettings = Settings.Load();
             _inputSimulator = new InputSimulator();
@@ -31,19 +35,44 @@ namespace VRCMuteSync
                 ToolTipText = "VRCMuteSync"
             };
 
-            // 2. 右クリックメニューの作成
-            var menu = new ContextMenu();
-            var settingsItem = new MenuItem { Header = "設定" };
-            settingsItem.Click += (s, args) => new SettingsWindow().Show();
-            var exitItem = new MenuItem { Header = "終了" };
+            var menu = new ContextMenu
+            {
+                Style = new Style(typeof(ContextMenu))
+            };
+
+            var settingsItem = new MenuItem
+            {
+                Header = VRCMuteSync.Properties.Resources.Tray_Settings,
+                Style = new Style(typeof(MenuItem))
+            };
+
+            settingsItem.Click += (s, args) =>
+            {
+                if (App.Current.MainWindow is not SettingsWindow window || !window.IsLoaded)
+                {
+                    window = new SettingsWindow();
+                    App.Current.MainWindow = window;
+                    window.Show();
+                }
+                else
+                {
+                    window.Activate();
+                }
+            };
+
+            var exitItem = new MenuItem
+            {
+                Header = VRCMuteSync.Properties.Resources.Tray_Exit,
+                Style = new Style(typeof(MenuItem))
+            };
             exitItem.Click += (s, args) => Shutdown();
 
             menu.Items.Add(settingsItem);
-            menu.Items.Add(new Separator());
+            menu.Items.Add(new Separator { Style = new Style(typeof(Separator)) });
             menu.Items.Add(exitItem);
+
             _trayIcon.ContextMenu = menu;
 
-            // 3. OSCサーバー起動
             StartOscServer();
         }
 
@@ -76,25 +105,31 @@ namespace VRCMuteSync
                     if (packet is OscMessage message && message.Address == "/avatar/parameters/MuteSelf")
                     {
                         bool isMuted = (bool)message[0];
-                        if (!isMuted) // ミュート「解除」時
+
+                        if (_lastMuteState != isMuted)
                         {
+                            _lastMuteState = isMuted;
+
                             Dispatcher.Invoke(() =>
                             {
-                                if (AppSettings.MainKey == 0) return; // 未設定なら何もしない
-
-                                var modifiers = AppSettings.ModifierKeys.ConvertAll(k => (VirtualKeyCode)k).ToArray();
-                                var mainKey = (VirtualKeyCode)AppSettings.MainKey;
-
-                                if (modifiers.Length > 0)
+                                Task.Run(() =>
                                 {
-                                    // Ctrl + Shift + M のような複合キーを送信
-                                    _inputSimulator!.Keyboard.ModifiedKeyStroke(modifiers, mainKey);
-                                }
-                                else
-                                {
-                                    // F15などの単体キーを送信
-                                    _inputSimulator!.Keyboard.KeyPress(mainKey);
-                                }
+                                    var keysToPress = AppSettings.Hotkeys.ConvertAll(k => (VirtualKeyCode)k);
+
+                                    if (keysToPress.Count > 0)
+                                    {
+                                        foreach (var k in keysToPress)
+                                        {
+                                            _inputSimulator!.Keyboard.KeyDown(k);
+                                        } 
+                                        Thread.Sleep(30);
+
+                                        for (int i = keysToPress.Count - 1; i >= 0; i--)
+                                        {
+                                            _inputSimulator!.Keyboard.KeyUp(keysToPress[i]);
+                                        }
+                                    }
+                                });
                             });
                         }
                     }

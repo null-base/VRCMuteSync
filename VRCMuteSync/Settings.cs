@@ -6,9 +6,9 @@ namespace VRCMuteSync
 {
     public class Settings
     {
+        private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
         public int OscPort { get; set; } = 9001;
-        public List<int> ModifierKeys { get; set; } = new List<int>();
-        public int MainKey { get; set; } = 0;
+        public List<int> Hotkeys { get; set; } = [];
 
         public static Settings Load()
         {
@@ -25,7 +25,7 @@ namespace VRCMuteSync
 
         public void Save()
         {
-            File.WriteAllText("settings.json", JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllText("settings.json", JsonSerializer.Serialize(this, _jsonOptions));
         }
     }
 }
